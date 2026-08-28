@@ -508,3 +508,204 @@ class LiquiditySweeperStrategy(BaseStrategy):
             'recent_low': self.recent_low,
             'swing_length': self.swing_length
         }
+
+
+class SupertrendRSIStrategy(BaseStrategy):
+    """
+    Supertrend + RSI Strategy - Institutional Breakout with Momentum Confirmation
+    
+    Combines:
+    - Supertrend for trend identification and stop loss placement
+    - RSI for momentum confirmation (>55 bullish, <45 bearish)
+    
+    This catches strong institutional moves with proper risk management
+    
+    Supertrend is ideal for institutions because:
+    - Clear entry/exit points
+    - Built-in stop losses
+    - Works well with high volume moves
+    
+    RSI Confirmation:
+    - RSI > 55: Strong bullish momentum (not overbought)
+    - RSI < 45: Strong bearish momentum (not oversold)
+    - 45-55: Neutral zone, avoid trading
+    """
+    
+    def __init__(self, symbol, timeframe='5', atr_period=10, atr_multiplier=3.0, 
+                 rsi_period=14, rsi_bullish=55, rsi_bearish=45, max_position_size=1):
+        super().__init__(symbol, timeframe, max_position_size)
+        self.atr_period = atr_period
+        self.atr_multiplier = atr_multiplier
+        self.rsi_period = rsi_period
+        self.rsi_bullish = rsi_bullish  # RSI > 55 = Strong bullish
+        self.rsi_bearish = rsi_bearish  # RSI < 45 = Strong bearish
+        self.name = 'Supertrend + RSI'
+        self.supertrend = None
+        self.supertrend_direction = None
+    
+    def generate_signal(self, data):
+        """
+        Generate signals combining Supertrend + RSI momentum
+        
+        BUY: 
+        - Supertrend is bullish (price above lower band)
+        - RSI > 55 (strong momentum)
+        - Volume confirmation
+        
+        SELL:
+        - Supertrend is bearish (price below upper band)
+        - RSI < 45 (strong bearish momentum)
+        - Volume confirmation
+        """
+        if len(data) < max(self.atr_period, self.rsi_period) + 5:
+            return 0
+        
+        # Calculate Supertrend
+        supertrend, supertrend_direction = self._calculate_supertrend(data)
+        
+        # Calculate RSI
+        rsi = self._calculate_rsi(data)
+        
+        if supertrend is None or rsi is None:
+            return 0
+        
+        current_price = data['close'].iloc[-1]
+        current_volume = data['volume'].iloc[-1]
+        avg_volume = data['volume'].tail(20).mean()
+        
+        # Get current values
+        current_supertrend = supertrend.iloc[-1]
+        current_rsi = rsi.iloc[-1]
+        current_direction = supertrend_direction.iloc[-1]
+        
+        # Bullish Signal
+        if (current_direction > 0 and  # Supertrend is bullish
+            current_rsi > self.rsi_bullish and  # RSI > 55 (strong momentum)
+            current_price > current_supertrend and  # Price above Supertrend line
+            current_volume > avg_volume * 1.2):  # Volume confirmation
+            return 1  # BUY
+        
+        # Bearish Signal
+        elif (current_direction < 0 and  # Supertrend is bearish
+              current_rsi < self.rsi_bearish and  # RSI < 45 (weak momentum)
+              current_price < current_supertrend and  # Price below Supertrend line
+              current_volume > avg_volume * 1.2):  # Volume confirmation
+            return -1  # SELL
+        
+        return 0  # HOLD
+    
+    def _calculate_supertrend(self, data):
+        """
+        Calculate Supertrend indicator
+        
+        Formula:
+        1. Calculate ATR (Average True Range)
+        2. Basic Upperband = (HIGH + LOW) / 2 + Multiplier * ATR
+        3. Basic Lowerband = (HIGH + LOW) / 2 - Multiplier * ATR
+        4. Final Band = Adjust based on previous values
+        5. Supertrend = Upper band if price below, Lower band if above
+        """
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate ATR
+            atr = self._calculate_atr(data)
+            
+            # Calculate basic bands
+            hl2 = (high + low) / 2
+            matr = self.atr_multiplier * atr
+            
+            basic_ub = hl2 + matr
+            basic_lb = hl2 - matr
+            
+            # Calculate final bands
+            final_ub = basic_ub.copy()
+            final_lb = basic_lb.copy()
+            
+            for i in range(1, len(final_ub)):
+                final_ub.iloc[i] = basic_ub.iloc[i] if basic_ub.iloc[i] < final_ub.iloc[i-1] or close.iloc[i-1] > final_ub.iloc[i-1] else final_ub.iloc[i-1]
+                final_lb.iloc[i] = basic_lb.iloc[i] if basic_lb.iloc[i] > final_lb.iloc[i-1] or close.iloc[i-1] < final_lb.iloc[i-1] else final_lb.iloc[i-1]
+            
+            # Determine Supertrend
+            supertrend = pd.Series(index=data.index, dtype='float64')
+            direction = pd.Series(index=data.index, dtype='float64')
+            
+            for i in range(len(data)):
+                if i == 0:
+                    supertrend.iloc[i] = close.iloc[i]
+                    direction.iloc[i] = 1
+                else:
+                    if close.iloc[i] <= final_ub.iloc[i]:
+                        supertrend.iloc[i] = final_ub.iloc[i]
+                        direction.iloc[i] = -1
+                    else:
+                        supertrend.iloc[i] = final_lb.iloc[i]
+                        direction.iloc[i] = 1
+            
+            return supertrend, direction
+        
+        except Exception as e:
+            logger.error(f"Error calculating Supertrend: {str(e)}")
+            return None, None
+    
+    def _calculate_atr(self, data):
+        """Calculate Average True Range"""
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            tr1 = high - low
+            tr2 = abs(high - close.shift())
+            tr3 = abs(low - close.shift())
+            
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = tr.rolling(window=self.atr_period).mean()
+            
+            return atr
+        
+        except Exception as e:
+            logger.error(f"Error calculating ATR: {str(e)}")
+            return None
+    
+    def _calculate_rsi(self, data):
+        """
+        Calculate Relative Strength Index (RSI)
+        
+        Formula:
+        1. Calculate price changes
+        2. Separate gains and losses
+        3. Calculate average gain and loss over period
+        4. RS = Average Gain / Average Loss
+        5. RSI = 100 - (100 / (1 + RS))
+        """
+        try:
+            close = data['close']
+            delta = close.diff()
+            
+            gain = (delta.where(delta > 0, 0)).rolling(window=self.rsi_period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=self.rsi_period).mean()
+            
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            
+            return rsi
+        
+        except Exception as e:
+            logger.error(f"Error calculating RSI: {str(e)}")
+            return None
+    
+    def get_strategy_params(self):
+        return {
+            'name': self.name,
+            'symbol': self.symbol,
+            'timeframe': self.timeframe,
+            'atr_period': self.atr_period,
+            'atr_multiplier': self.atr_multiplier,
+            'rsi_period': self.rsi_period,
+            'rsi_bullish_threshold': self.rsi_bullish,
+            'rsi_bearish_threshold': self.rsi_bearish,
+            'max_position_size': self.max_position_size
+        }
