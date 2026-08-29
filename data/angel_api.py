@@ -1,9 +1,20 @@
 import logging
+import sys
+
+# Handle smartapi import with better error handling
 try:
     from smartapi import SmartConnect
 except ImportError:
-    # Alternative import for smartapi-python package
-    from smartApi import SmartConnect
+    try:
+        from smartApi import SmartConnect
+    except ImportError:
+        logger = logging.getLogger(__name__)
+        logger.error(
+            "Failed to import SmartConnect. "
+            "Please install smartapi-python using: pip install smartapi-python"
+        )
+        sys.exit(1)
+
 from config.settings import Config
 
 logger = logging.getLogger(__name__)
