@@ -8,10 +8,20 @@ logger = logging.getLogger(__name__)
 class DataFetcher:
     """Fetch market data from Angel One API"""
     
-    def __init__(self):
+    def __init__(self, skip_login=False):
+        """
+        Initialize DataFetcher
+        
+        Args:
+            skip_login: If True, skip Angel One login (useful for backtesting)
+        """
         self.angel = AngelOneAPI()
-        self.angel.login()
+        self.skip_login = skip_login
         self.cache = {}
+        
+        # Only attempt login if not skipping
+        if not skip_login:
+            self.angel.login()
     
     def get_candles(self, symbol, interval='5', from_date=None, to_date=None):
         """
@@ -40,15 +50,15 @@ class DataFetcher:
             
             # For now, return empty DataFrame (implement actual API call)
             # This would integrate with Angel One's historical data API
-            logger.info(f"Fetching {interval}min candles for {symbol} from {from_date} to {to_date}")
+            logger.info(f"Fetching {interval}min candles for {symbol} from {from_date.date()} to {to_date.date()}")
             
-            # Placeholder DataFrame
+            # Placeholder DataFrame with proper structure
             df = pd.DataFrame(columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             return df
             
         except Exception as e:
             logger.error(f"Error fetching candles: {str(e)}")
-            return pd.DataFrame()
+            return pd.DataFrame(columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     
     def get_live_data(self, symbols):
         """
@@ -60,6 +70,10 @@ class DataFetcher:
         Returns:
             Dictionary with symbol: quote data
         """
+        if self.skip_login or not self.angel.is_logged_in:
+            logger.warning("Not logged in. Cannot fetch live data.")
+            return {}
+            
         try:
             live_data = {}
             
@@ -83,6 +97,10 @@ class DataFetcher:
     
     def get_intraday_data(self, symbol):
         """Get intraday candles for today"""
+        if self.skip_login or not self.angel.is_logged_in:
+            logger.warning("Not logged in. Cannot fetch intraday data.")
+            return pd.DataFrame()
+            
         try:
             # Implement using Angel One intraday API
             logger.info(f"Fetching intraday data for {symbol}")

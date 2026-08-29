@@ -18,17 +18,18 @@ logger = setup_logger(__name__)
 class TradingBot:
     """Main trading bot class"""
     
-    def __init__(self):
+    def __init__(self, skip_angel_login=False):
         logger.info("Initializing Trading Bot...")
         
-        # Validate configuration
+        # Validate configuration FIRST before initializing API
         try:
             Config.validate()
         except ValueError as e:
             logger.error(f"Configuration error: {str(e)}")
             sys.exit(1)
         
-        self.data_fetcher = DataFetcher()
+        self.skip_angel_login = skip_angel_login
+        self.data_fetcher = DataFetcher(skip_login=skip_angel_login)
         self.angel = AngelOneAPI()
         self.strategies = []
         self.positions = {}
@@ -135,8 +136,9 @@ class TradingBot:
 def main():
     """Main entry point"""
     
-    # Create bot instance
-    bot = TradingBot()
+    # Create bot instance with skip_angel_login=True for backtesting
+    # Set to False if you want to login to Angel One before backtesting
+    bot = TradingBot(skip_angel_login=True)
     
     # Create and add strategy
     strategy = MovingAverageStrategy(
@@ -153,6 +155,9 @@ def main():
     
     # Uncomment for live trading
     # bot.run_live()
+    
+    # Cleanup
+    bot.shutdown()
 
 if __name__ == '__main__':
     main()

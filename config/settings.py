@@ -45,11 +45,27 @@ class Config:
     
     @staticmethod
     def validate():
-        """Validate required configuration"""
-        required_fields = ['ANGEL_API_KEY', 'ANGEL_CLIENT_CODE', 'ANGEL_PASSWORD']
+        """
+        Validate required configuration.
+        Note: Angel One credentials are only required for live trading.
+        For backtesting, they can be optional.
+        """
+        # These are recommended but not strictly required for backtesting
+        # Remove them from required_fields if you want to run backtest without credentials
+        required_fields = []
         missing = [field for field in required_fields if not getattr(Config, field)]
         
         if missing:
             raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+        
+        # Log which optional features are available
+        if Config.ANGEL_API_KEY and Config.ANGEL_CLIENT_CODE and Config.ANGEL_PASSWORD:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("Angel One API credentials configured. Live trading available.")
+        else:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("Angel One API credentials not configured. Backtesting mode only.")
         
         return True
