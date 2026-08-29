@@ -1,5 +1,9 @@
 import logging
-from smartapi import SmartConnect
+try:
+    from smartapi import SmartConnect
+except ImportError:
+    # Alternative import for smartapi-python package
+    from smartApi import SmartConnect
 from config.settings import Config
 
 logger = logging.getLogger(__name__)
